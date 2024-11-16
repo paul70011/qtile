@@ -368,13 +368,14 @@ class Qtile(CommandObject):
             config = self.config.fake_screens
         else:
             # Alias screens with the same x and y coordinates, taking largest
-            xywh = {}  # type: dict[tuple[int, int], tuple[int, int]]
+            xywh = {}  # type: dict[tuple[int, int], tuple[int, int, str]]
             for info in self.core.get_screen_info():
                 pos = (info.x, info.y)
-                width, height = xywh.get(pos, (0, 0))
-                xywh[pos] = (max(width, info.width), max(height, info.height))
+                width, height, _ = xywh.get(pos, (0, 0, ""))
+                xywh[pos] = (max(width, info.width), max(height, info.height), info.name)
 
-            screen_info = [ScreenRect(x, y, w, h) for (x, y), (w, h) in xywh.items()]
+
+            screen_info = [ScreenRect(x, y, w, h, name=name) for (x, y), (w, h, name) in xywh.items()]
             config = self.config.screens
 
         for i, info in enumerate(screen_info):
@@ -382,6 +383,8 @@ class Qtile(CommandObject):
                 scr = Screen()
             else:
                 scr = config[i]
+
+            scr.name = info.name
 
             if not hasattr(self, "current_screen") or reloading:
                 self.current_screen = scr
