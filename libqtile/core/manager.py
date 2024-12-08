@@ -42,10 +42,25 @@ import libqtile
 from libqtile import bar, hook, ipc, utils
 from libqtile.backend import base
 from libqtile.command import interface
-from libqtile.command.base import CommandError, CommandException, CommandObject, expose_command
+from libqtile.command.base import (
+    CommandError,
+    CommandException,
+    CommandObject,
+    expose_command,
+)
 from libqtile.command.client import InteractiveCommandClient
 from libqtile.command.interface import IPCCommandServer, QtileCommandInterface
-from libqtile.config import Click, Drag, Key, KeyChord, Match, Mouse, Rule, Screen, ScreenRect
+from libqtile.config import (
+    Click,
+    Drag,
+    Key,
+    KeyChord,
+    Match,
+    Mouse,
+    Rule,
+    Screen,
+    ScreenRect,
+)
 from libqtile.config import ScratchPad as ScratchPadConfig
 from libqtile.core.lifecycle import lifecycle
 from libqtile.core.loop import LoopContext, QtileEventLoopPolicy
@@ -57,7 +72,13 @@ from libqtile.log_utils import logger
 from libqtile.resources.sleep import inhibitor
 from libqtile.scratchpad import ScratchPad
 from libqtile.scripts.main import VERSION
-from libqtile.utils import cancel_tasks, get_cache_dir, lget, remove_dbus_rules, send_notification
+from libqtile.utils import (
+    cancel_tasks,
+    get_cache_dir,
+    lget,
+    remove_dbus_rules,
+    send_notification,
+)
 from libqtile.widget.base import _Widget
 
 if TYPE_CHECKING:
@@ -136,7 +157,9 @@ class Qtile(CommandObject):
         for grp in self.config.groups:
             if isinstance(grp, ScratchPadConfig):
                 sp = ScratchPad(grp.name, grp.dropdowns, grp.label, grp.single)
-                sp._configure([self.config.floating_layout], self.config.floating_layout, self)
+                sp._configure(
+                    [self.config.floating_layout], self.config.floating_layout, self
+                )
                 self.groups.append(sp)
                 self.groups_map[sp.name] = sp
 
@@ -369,22 +392,31 @@ class Qtile(CommandObject):
 
         if hasattr(self.config, "fake_screens"):
             screen_info = [
-                ScreenRect(s.x, s.y, s.width, s.height, None) for s in self.config.fake_screens
+                ScreenRect(s.x, s.y, s.width, s.height, None, None)
+                for s in self.config.fake_screens
             ]
             config = self.config.fake_screens
         else:
             # Alias screens with the same x and y coordinates, taking largest
-            xywh: dict[tuple[int, int], tuple[int, int, str | None]] = {}
+            xywh: dict[tuple[int, int], tuple[int, int, str | None, str | None]] = {}
             for info in self.core.get_screen_info():
                 pos = (info.x, info.y)
-                width, height, serial = xywh.get(pos, (0, 0, info.serial))
+                width, height, serial, name = xywh.get(
+                    pos, (0, 0, info.serial, info.name)
+                )
                 # if one monitor is wider and one monitor is longer, either
                 # serial number was valid (i.e. we could choose either, since
                 # we're going to project over the whole space). just pick one.
-                xywh[pos] = (max(width, info.width), max(height, info.height), info.serial)
+                xywh[pos] = (
+                    max(width, info.width),
+                    max(height, info.height),
+                    info.serial,
+                    info.name,
+                )
 
             screen_info = [
-                ScreenRect(x, y, w, h, serial) for (x, y), (w, h, serial) in xywh.items()
+                ScreenRect(x, y, w, h, serial, name)
+                for (x, y), (w, h, serial, name) in xywh.items()
             ]
             config = self.config.screens
 
@@ -395,7 +427,7 @@ class Qtile(CommandObject):
         )
 
         for i, info in enumerate(screen_info):
-            scr = Screen(serial=info.serial)
+            scr = Screen(serial=info.serial, name=info.name)
             fresh_screen = True
 
             # first, try to find a screen that matches this one by serial
@@ -420,7 +452,9 @@ class Qtile(CommandObject):
             if fresh_screen and i < len(config):
                 if config[i].serial is not None and config[i].serial != info.serial:
                     logger.warning(
-                        "using config serial %s for physical serial %s", scr.serial, info.serial
+                        "using config serial %s for physical serial %s",
+                        scr.serial,
+                        info.serial,
                     )
                     # we need a copy here in case the ith window was a
                     # previously used serial number
@@ -429,6 +463,7 @@ class Qtile(CommandObject):
                     scr = config[i]
 
                 scr.serial = info.serial
+                scr.name = info.name
 
             if not hasattr(self, "current_screen") or reloading:
                 self.current_screen = scr
@@ -447,7 +482,8 @@ class Qtile(CommandObject):
             # If the screen has changed position and/or size, or is a new screen then make sure that any gaps/bars
             # are reconfigured
             reconfigure_gaps = (
-                (info.x, info.y, info.width, info.height) != (scr.x, scr.y, scr.width, scr.height)
+                (info.x, info.y, info.width, info.height)
+                != (scr.x, scr.y, scr.width, scr.height)
             ) or (i + 1 > len(self.screens))
 
             if not hasattr(scr, "group"):
@@ -499,13 +535,17 @@ class Qtile(CommandObject):
 
         hook.fire("screens_reconfigured")
 
-    def paint_screen(self, screen: Screen, image_path: str, mode: str | None = None) -> None:
+    def paint_screen(
+        self, screen: Screen, image_path: str, mode: str | None = None
+    ) -> None:
         self.core.painter.paint(screen, image_path, mode)
 
     def fill_screen(self, screen: Screen, background: ColorType) -> None:
         self.core.painter.fill(screen, background)
 
-    def process_key_event(self, keysym: int, mask: int) -> tuple[Key | KeyChord | None, bool]:
+    def process_key_event(
+        self, keysym: int, mask: int
+    ) -> tuple[Key | KeyChord | None, bool]:
         key = self.keys_map.get((keysym, mask), None)
         if key is None:
             logger.debug("Ignoring unknown keysym: %s, mask: %s", keysym, mask)
@@ -524,7 +564,9 @@ class Qtile(CommandObject):
                     if status in (interface.ERROR, interface.EXCEPTION):
                         logger.error("KB command error %s: %s", cmd.name, val)
                     executed = True
-            if self.chord_stack and (not self.chord_stack[-1].mode or key.key == "Escape"):
+            if self.chord_stack and (
+                not self.chord_stack[-1].mode or key.key == "Escape"
+            ):
                 self.ungrab_chord()
             # We never swallow when no commands have been executed,
             # even when key.swallow is set to True
@@ -638,7 +680,11 @@ class Qtile(CommandObject):
     ) -> bool:
         if name not in self.groups_map.keys():
             g = _Group(
-                name, layout, label=label, screen_affinity=screen_affinity, persist=persist
+                name,
+                layout,
+                label=label,
+                screen_affinity=screen_affinity,
+                persist=persist,
             )
             if index is None:
                 self.groups.append(g)
@@ -838,7 +884,9 @@ class Qtile(CommandObject):
             return y_match[0]
         return self._find_closest_closest(x, y, x_match + y_match)
 
-    def _find_closest_closest(self, x: int, y: int, candidate_screens: list[Screen]) -> Screen:
+    def _find_closest_closest(
+        self, x: int, y: int, candidate_screens: list[Screen]
+    ) -> Screen:
         """
         if find_closest_screen can't determine one, we've got multiple
         screens, so figure out who is closer.  We'll calculate using
@@ -872,7 +920,9 @@ class Qtile(CommandObject):
             if isinstance(window, base.Window):
                 window.focus()
 
-    def process_button_click(self, button_code: int, modmask: int, x: int, y: int) -> bool:
+    def process_button_click(
+        self, button_code: int, modmask: int, x: int, y: int
+    ) -> bool:
         handled = False
         for m in self._mouse_map[button_code]:
             if not m.modmask == modmask:
@@ -890,13 +940,17 @@ class Qtile(CommandObject):
                             logger.error("Mouse command error %s: %s", i.name, val)
                         handled = True
             elif (
-                isinstance(m, Drag) and self.current_window and not self.current_window.fullscreen
+                isinstance(m, Drag)
+                and self.current_window
+                and not self.current_window.fullscreen
             ):
                 if self.config.follow_mouse_focus == "click_or_drag_only":
                     self._focus_hovered_window()
                 if m.start:
                     i = m.start
-                    status, val = self.server.call((i.selectors, i.name, i.args, i.kwargs, False))
+                    status, val = self.server.call(
+                        (i.selectors, i.name, i.args, i.kwargs, False)
+                    )
                     if status in (interface.ERROR, interface.EXCEPTION):
                         logger.error("Mouse command error %s: %s", i.name, val)
                         continue
@@ -935,7 +989,13 @@ class Qtile(CommandObject):
             for i in cmd:
                 if i.check(self):
                     status, val = self.server.call(
-                        (i.selectors, i.name, i.args + (rx + dx, ry + dy), i.kwargs, False)
+                        (
+                            i.selectors,
+                            i.name,
+                            i.args + (rx + dx, ry + dy),
+                            i.kwargs,
+                            False,
+                        )
                     )
                     if status in (interface.ERROR, interface.EXCEPTION):
                         logger.error("Mouse command error %s: %s", i.name, val)
@@ -974,7 +1034,9 @@ class Qtile(CommandObject):
         elif name == "widget":
             return False, list(self.widgets_map.keys())
         elif name == "bar":
-            return False, [x.position for x in self.current_screen.gaps if isinstance(x, bar.Bar)]
+            return False, [
+                x.position for x in self.current_screen.gaps if isinstance(x, bar.Bar)
+            ]
         elif name == "window":
             windows: list[str | int]
             windows = [
@@ -1045,7 +1107,9 @@ class Qtile(CommandObject):
 
         return self._eventloop.call_soon_threadsafe(f)
 
-    def call_later(self, delay: int | float, func: Callable, *args: Any) -> asyncio.TimerHandle:
+    def call_later(
+        self, delay: int | float, func: Callable, *args: Any
+    ) -> asyncio.TimerHandle:
         """Another event loop proxy, see `call_soon`."""
 
         def f() -> None:
@@ -1150,7 +1214,9 @@ class Qtile(CommandObject):
 
             def __str__(self) -> str:
                 format_, n = self.getformat()
-                return "".join(format_ % tuple(self.expandlist(row, n)) for row in self.rows)
+                return "".join(
+                    format_ % tuple(self.expandlist(row, n)) for row in self.rows
+                )
 
         result = FormatTable()
         result.add(["Mode", "KeySym", "Mod", "Command", "Desc"])
@@ -1413,12 +1479,16 @@ class Qtile(CommandObject):
     @expose_command()
     def next_screen(self) -> None:
         """Move to next screen"""
-        self.focus_screen((self.screens.index(self.current_screen) + 1) % len(self.screens))
+        self.focus_screen(
+            (self.screens.index(self.current_screen) + 1) % len(self.screens)
+        )
 
     @expose_command()
     def prev_screen(self) -> None:
         """Move to the previous screen"""
-        self.focus_screen((self.screens.index(self.current_screen) - 1) % len(self.screens))
+        self.focus_screen(
+            (self.screens.index(self.current_screen) - 1) % len(self.screens)
+        )
 
     @expose_command()
     def windows(self) -> list[dict[str, Any]]:
@@ -1426,13 +1496,16 @@ class Qtile(CommandObject):
         return [
             i.info()
             for i in self.windows_map.values()
-            if not isinstance(i, base.Internal | _Widget) and isinstance(i, CommandObject)
+            if not isinstance(i, base.Internal | _Widget)
+            and isinstance(i, CommandObject)
         ]
 
     @expose_command()
     def internal_windows(self) -> list[dict[str, Any]]:
         """Return info for each internal window (bars, for example)"""
-        return [i.info() for i in self.windows_map.values() if isinstance(i, base.Internal)]
+        return [
+            i.info() for i in self.windows_map.values() if isinstance(i, base.Internal)
+        ]
 
     @expose_command()
     def qtile_info(self) -> dict:
@@ -1475,7 +1548,10 @@ class Qtile(CommandObject):
         indexa = self.groups.index(self.groups_map[namea])
         indexb = self.groups.index(self.groups_map[nameb])
 
-        self.groups[indexa], self.groups[indexb] = self.groups[indexb], self.groups[indexa]
+        self.groups[indexa], self.groups[indexb] = (
+            self.groups[indexb],
+            self.groups[indexa],
+        )
         hook.fire("setgroup")
 
         # update window _NET_WM_DESKTOP
@@ -1725,7 +1801,12 @@ class Qtile(CommandObject):
     ) -> bool:
         """Add a group with the given name"""
         return self.add_group(
-            name=group, layout=layout, layouts=layouts, label=label, index=index, persist=persist
+            name=group,
+            layout=layout,
+            layouts=layouts,
+            label=label,
+            index=index,
+            persist=persist,
         )
 
     @expose_command()
@@ -1796,7 +1877,9 @@ class Qtile(CommandObject):
                 bar.show(not bar.is_show())
                 self.current_group.layout_all()
             else:
-                logger.warning("Not found bar in position '%s' for hide/show.", position)
+                logger.warning(
+                    "Not found bar in position '%s' for hide/show.", position
+                )
         elif position == "all":
             is_show = None
             for bar in [screen.left, screen.right, screen.top, screen.bottom]:

@@ -91,7 +91,9 @@ class Output(HasListeners):
         self.add_listener(wlr_output.request_state_event, self._on_request_state)
 
         # The layers enum indexes into this list to get a list of surfaces
-        self.layers: list[list[LayerStatic]] = [[] for _ in range(len(LayerShellV1Layer))]
+        self.layers: list[list[LayerStatic]] = [
+            [] for _ in range(len(LayerShellV1Layer))
+        ]
 
     def finalize(self) -> None:
         self.finalize_listeners()
@@ -129,13 +131,22 @@ class Output(HasListeners):
         # Inform clients of the frame
         self.scene_output.send_frame_done(Timespec.get_monotonic_time())
 
-    def _on_request_state(self, _listener: Listener, request: OutputEventRequestState) -> None:
+    def _on_request_state(
+        self, _listener: Listener, request: OutputEventRequestState
+    ) -> None:
         logger.debug("Signal: output request_state")
         self.wlr_output.commit(request.state)
 
     def get_screen_info(self) -> ScreenRect:
         width, height = self.wlr_output.effective_resolution()
-        return ScreenRect(int(self.x), int(self.y), width, height, self.wlr_output.serial)
+        return ScreenRect(
+            int(self.x),
+            int(self.y),
+            width,
+            height,
+            self.wlr_output.serial,
+            self.wlr_output.name,
+        )
 
     def organise_layers(self) -> None:
         """Organise the positioning of layer shell surfaces."""
@@ -158,7 +169,9 @@ class Output(HasListeners):
             usable_area.y - self.y,  # top
             self.y + oh - usable_area.y - usable_area.height,  # bottom
         )
-        delta = tuple(new - old for new, old in zip(new_reserved_space, self._reserved_space))
+        delta = tuple(
+            new - old for new, old in zip(new_reserved_space, self._reserved_space)
+        )
         if any(delta):
             self.core.qtile.reserve_space(delta, self.screen)  # type: ignore
             self._reserved_space = new_reserved_space

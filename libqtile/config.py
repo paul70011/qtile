@@ -386,16 +386,18 @@ class ScreenRect:
     width: int
     height: int
     serial: str | None
+    name: str | None
 
     def hsplit(self, columnwidth: int) -> tuple[ScreenRect, ScreenRect]:
         assert 0 < columnwidth < self.width
         return (
-            self.__class__(self.x, self.y, columnwidth, self.height, None),
+            self.__class__(self.x, self.y, columnwidth, self.height, None, None),
             self.__class__(
                 self.x + columnwidth,
                 self.y,
                 self.width - columnwidth,
                 self.height,
+                None,
                 None,
             ),
         )
@@ -403,9 +405,14 @@ class ScreenRect:
     def vsplit(self, rowheight: int) -> tuple[ScreenRect, ScreenRect]:
         assert 0 < rowheight < self.height
         return (
-            self.__class__(self.x, self.y, self.width, rowheight, None),
+            self.__class__(self.x, self.y, self.width, rowheight, None, None),
             self.__class__(
-                self.x, self.y + rowheight, self.width, self.height - rowheight, None
+                self.x,
+                self.y + rowheight,
+                self.width,
+                self.height - rowheight,
+                None,
+                None,
             ),
         )
 
@@ -435,6 +442,8 @@ class Screen(CommandObject):
     config should be bound to. You can find this via ``get-edid -b $BUS |
     parse-edid``, or by looking at the sticker on the back of your monitor :).
     This is mostly useful for people with multi-monitor configs.
+
+    ``name`` is optionally the name of the output. You can find this via ``wlr-randr``. E.g. ``DP-1``.
     """
 
     group: _Group
@@ -455,6 +464,7 @@ class Screen(CommandObject):
         width: int | None = None,
         height: int | None = None,
         serial: str | None = None,
+        name: str | None = None,
     ) -> None:
         self.top = top
         self.bottom = bottom
@@ -473,6 +483,7 @@ class Screen(CommandObject):
         self.height = height if height is not None else 0
         self.previous_group: _Group | None = None
         self.serial = serial
+        self.name = name
 
     def _configure(
         self,
@@ -541,7 +552,9 @@ class Screen(CommandObject):
         return val
 
     def get_rect(self) -> ScreenRect:
-        return ScreenRect(self.dx, self.dy, self.dwidth, self.dheight, self.serial)
+        return ScreenRect(
+            self.dx, self.dy, self.dwidth, self.dheight, self.serial, self.name
+        )
 
     def set_group(
         self, new_group: _Group | None, save_prev: bool = True, warp: bool = True
@@ -679,6 +692,7 @@ class Screen(CommandObject):
             x=self.x,
             y=self.y,
             serial=self.serial,
+            name=self.name,
         )
 
     @expose_command()
