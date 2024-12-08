@@ -420,50 +420,42 @@ class Qtile(CommandObject):
             ]
             config = self.config.screens
 
-        # wayland parses edid natively, we need an extra library that may or
-        # may not be installed to do it in x11
-        have_serials_from_hardware = self.core.name == "wayland" or any(
-            i.serial is not None for i in screen_info
-        )
+        def screen_generator():
+            available_config_idxs = list(range(len(config)))
 
-        for i, info in enumerate(screen_info):
-            scr = Screen(serial=info.serial, name=info.name)
-            fresh_screen = True
-
-            # first, try to find a screen that matches this one by serial
-            # number
-            for screen in config:
-                if screen.serial is not None:
-                    if not have_serials_from_hardware:
-                        # if no hardware provided a serial and people provided
-                        # hardware, it's possible they didn't install pyedid on
-                        # x11.
-                        logger.warning(
-                            "serial (%s) specified in config, none found from hardware. do you have pyedid installed?",
-                            screen.serial,
-                        )
-                    if screen.serial == info.serial:
-                        scr = screen
-                        fresh_screen = False
+            # screens that can be matched by serial number
+            for i, info in reversed(list(enumerate(screen_info))):
+                for idx in available_config_idxs:
+                    if config[idx].serial == info.serial and info.serial is not None:
+                        available_config_idxs.remove(idx)
+                        screen_info.pop(i)
+                        yield info, config[idx]
                         break
 
-            # if we didn't find one by serial number, take the ith screen
-            # assuming it exists, ignoring its serial number
-            if fresh_screen and i < len(config):
-                if config[i].serial is not None and config[i].serial != info.serial:
-                    logger.warning(
-                        "using config serial %s for physical serial %s",
-                        scr.serial,
-                        info.serial,
-                    )
-                    # we need a copy here in case the ith window was a
-                    # previously used serial number
-                    scr = copy.copy(config[i])
-                else:
-                    scr = config[i]
+            # screens that can be matched by name
+            for i, info in reversed(list(enumerate(screen_info))):
+                for idx in available_config_idxs:
+                    if config[idx].name == info.name and info.name is not None:
+                        available_config_idxs.remove(idx)
+                        screen_info.pop(i)
+                        yield info, config[idx]
+                        break
 
-                scr.serial = info.serial
-                scr.name = info.name
+            # remaining config screens
+            for i, info in reversed(list(enumerate(screen_info))):
+                if len(available_config_idxs) == 0:
+                    break
+
+                screen_info.pop(i)
+                yield info, config[available_config_idxs.pop(0)]
+
+            # new screens
+            for info in screen_info:
+                yield info, Screen()
+
+        for i, (info, scr) in enumerate(screen_generator()):
+            scr.serial = info.serial
+            scr.name = info.name
 
             if not hasattr(self, "current_screen") or reloading:
                 self.current_screen = scr
