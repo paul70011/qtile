@@ -383,7 +383,6 @@ class ScreenRect:
     y: int
     width: int
     height: int
-    name: str = ""
 
     def hsplit(self, columnwidth: int) -> tuple[ScreenRect, ScreenRect]:
         assert 0 < columnwidth < self.width
@@ -425,7 +424,6 @@ class Screen(CommandObject):
 
     group: _Group
     index: int
-    name: str
 
     def __init__(
         self,
