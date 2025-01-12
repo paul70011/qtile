@@ -197,6 +197,7 @@ class Registry:
 
 
 hooks: list[Hook] = [
+    Hook("before_reload", "Called before the config is reloaded"),
     Hook(
         "startup_once",
         """Called when Qtile has started on first start
