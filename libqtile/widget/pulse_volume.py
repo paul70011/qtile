@@ -44,7 +44,7 @@ class PulseConnection:
         self.default_sink_name = None
         self.pulse = None
         self.configured = False
-        self.callbacks = []
+        self.callbacks = set()
         self.qtile = qtile
         self.timer = None
 
@@ -96,6 +96,10 @@ class PulseConnection:
         async for event in self.pulse.subscribe_events("sink", "server"):
             # Sink events will signify volume changes
             if event.facility == "sink":
+                # There's been a change to available sinks
+                # Update default sink details before querying the sink
+                if event.t in ("new", "remove"):
+                    await self.get_server_info()
                 await self.get_sink_info()
             # Server events include when the default sink changes
             elif event.facility == "server":
@@ -147,7 +151,7 @@ class PulseConnection:
         pulse server.
         """
         need_configure = not bool(self.callbacks)
-        self.callbacks.append(callback)
+        self.callbacks.add(callback)
 
         if need_configure:
             create_task(self._configure())
@@ -159,10 +163,7 @@ class PulseConnection:
         Removing the last client closes the connection with the
         pulse server and cancels future calls to connect.
         """
-        try:
-            self.callbacks.remove(callback)
-        except ValueError:
-            pass
+        self.callbacks.discard(callback)
 
         if not self.callbacks:
             self.pulse.close()

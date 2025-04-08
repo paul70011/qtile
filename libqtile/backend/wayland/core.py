@@ -95,6 +95,7 @@ from wlroots.wlr_types.server_decoration import (
     ServerDecorationManager,
     ServerDecorationManagerMode,
 )
+from wlroots.wlr_types.single_pixel_buffer_v1 import SinglePixelBufferManagerV1
 from wlroots.wlr_types.xdg_shell import XdgShell, XdgSurface, XdgSurfaceRole
 from xkbcommon import xkb
 
@@ -347,6 +348,7 @@ class Core(base.Core, wlrq.HasListeners):
         GammaControlManagerV1(self.display)
         Viewporter(self.display)
         FractionalScaleManagerV1(self.display)
+        SinglePixelBufferManagerV1(self.display)
         self.scene.set_presentation(Presentation.create(self.display, self.backend))
         output_power_manager = OutputPowerManagerV1(self.display)
         self.add_listener(
