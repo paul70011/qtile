@@ -5,6 +5,9 @@ on:
     tags: ['*']
   release:
     types: [published]
+permissions:
+  id-token: write
+  contents: read
 jobs:
   build-wayland:
     name: Build Wayland libraries
@@ -75,7 +78,7 @@ jobs:
           tar -xzf xorgproto-xorgproto-${{ env.inputproto-version }}.tar.gz
           tar -xzf libxcvt-libxcvt-${{ env.xcvt-version }}.tar.gz
           tar -xzf xserver-xwayland-${{ env.xwayland-version }}.tar.gz
-          tar -xzf drm-libdrm-${{ env.libdrm-version }}.tar.gz
+          tar -xzf libdrm-libdrm-${{ env.libdrm-version }}.tar.gz
           tar -xjf pixman-pixman-${{ env.pixman-version }}.tar.bz2
           tar -xzf seatd.tar.gz
           tar -xzf wlroots.tar.gz
@@ -86,7 +89,7 @@ jobs:
           XWAYLAND_URL: https://gitlab.freedesktop.org/xorg/xserver/-/archive/xwayland-${{ env.xwayland-version }}/xserver-xwayland-${{ env.xwayland-version }}.tar.gz
           XCVT_URL: https://gitlab.freedesktop.org/xorg/lib/libxcvt/-/archive/libxcvt-${{ env.xcvt-version }}/libxcvt-libxcvt-${{ env.xcvt-version }}.tar.gz
           INPUTPROTO_URL: https://gitlab.freedesktop.org/xorg/proto/xorgproto/-/archive/xorgproto-${{ env.inputproto-version}}/xorgproto-xorgproto-${{ env.inputproto-version}}.tar.gz
-          LIBDRM_URL: https://gitlab.freedesktop.org/mesa/drm/-/archive/libdrm-${{ env.libdrm-version }}/drm-libdrm-${{ env.libdrm-version }}.tar.gz
+          LIBDRM_URL: https://gitlab.freedesktop.org/mesa/libdrm/-/archive/libdrm-${{ env.libdrm-version }}/libdrm-libdrm-${{ env.libdrm-version }}.tar.gz
           SEATD_URL: https://github.com/kennylevinsen/seatd/archive/refs/tags/${{ env.seatd-version }}.tar.gz
           PIXMAN_URL: https://gitlab.freedesktop.org/pixman/pixman/-/archive/pixman-${{ env.pixman-version }}/pixman-pixman-${{ env.pixman-version }}.tar.bz2
           WLROOTS_URL: https://gitlab.freedesktop.org/wlroots/wlroots/-/archive/${{ env.wlroots-version }}/wlroots-${{ env.wlroots-version }}.tar.gz
@@ -115,7 +118,7 @@ jobs:
           DESTDIR=~/wayland ninja -C build install
           ninja -C build install
       - name: Build libdrm
-        working-directory: drm-libdrm-${{ env.libdrm-version }}
+        working-directory: libdrm-libdrm-${{ env.libdrm-version }}
         run: |
           meson build --prefix=/usr
           ninja -C build
@@ -177,7 +180,7 @@ jobs:
     container: quay.io/pypa/manylinux_2_28_x86_64
     strategy:
       matrix:
-        python-version: ["cp3.10", "cp3.11", "cp3.12"]
+        python-version: ["cp3.12", "cp3.13"]
     steps:
       - name: Install dependencies
         run: |
@@ -203,7 +206,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Set environment variables
         run: |
-          PYTHON_ROOT=$(find /opt/python -name ${PYTHON_VERSION/./}-*)
+          PYTHON_ROOT=$(find /opt/python -name ${PYTHON_VERSION/./}-${PYTHON_VERSION/./})
           echo "${PYTHON_ROOT}/bin" >> $GITHUB_PATH
         shell: bash
         env:
@@ -226,7 +229,7 @@ jobs:
     needs: build-wheel
     strategy:
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        python-version: ["3.13"]
     steps:
       - name: Download wheels
         if: ${{ matrix.manual-version == '' }}
@@ -251,14 +254,14 @@ jobs:
     runs-on: ubuntu-latest
     container: quay.io/pypa/manylinux_2_28_x86_64
     env:
-      python-version: "cp3.12"
+      python-version: "cp3.13"
     steps:
       - name: Install dependencies
         run: dnf install -y cairo-devel libffi-devel
       - uses: actions/checkout@v4
       - name: Set environment variables
         run: |
-          PYTHON_ROOT=$(find /opt/python -name ${PYTHON_VERSION/./}-*)
+          PYTHON_ROOT=$(find /opt/python -name ${PYTHON_VERSION/./}-${PYTHON_VERSION/./})
           echo "${PYTHON_ROOT}/bin" >> $GITHUB_PATH
         shell: bash
         env:
@@ -278,7 +281,7 @@ jobs:
     needs: [test-wheel, build-source]
     strategy:
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        python-version: ["3.13"]
     steps:
       - name: Download wheels
         if: ${{ matrix.manual-version == '' }}
@@ -295,15 +298,10 @@ jobs:
       - name: Publish package to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         if: github.event_name == 'release'
-        with:
-          user: __token__
-          password: ${{ secrets.PYPI_API_TOKEN }}
       - name: Publish package to TestPyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         if: github.event_name == 'push'
         with:
-          user: __token__
-          password: ${{ secrets.TEST_PYPI_API_TOKEN }}
           repository-url: https://test.pypi.org/legacy/
           skip-existing: true
   upload-source:
@@ -311,7 +309,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [test-wheel, build-source]
     env:
-      python-version: "cp3.12"
+      python-version: "cp3.13"
     steps:
       - name: Download source
         uses: actions/download-artifact@v4
@@ -321,14 +319,9 @@ jobs:
       - name: Publish package to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         if: github.event_name == 'release'
-        with:
-          user: __token__
-          password: ${{ secrets.PYPI_API_TOKEN }}
       - name: Publish package to TestPyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         if: github.event_name == 'push'
         with:
-          user: __token__
-          password: ${{ secrets.TEST_PYPI_API_TOKEN }}
           repository-url: https://test.pypi.org/legacy/
           skip-existing: true

@@ -35,6 +35,7 @@ except ImportError:
     has_xdg = False
 
 from libqtile import bar
+from libqtile.backend.base.drawer import TextLayout
 from libqtile.images import Img
 from libqtile.log_utils import logger
 from libqtile.widget import base
@@ -61,7 +62,7 @@ class LaunchBar(base._Widget):
     Optional requirements: `pyxdg <https://pypi.org/project/pyxdg/>`__ for finding the icon path if it is not provided in the ``progs`` tuple.
     """
 
-    orientations = base.ORIENTATION_HORIZONTAL
+    orientations = base.ORIENTATION_BOTH
     defaults = [
         ("padding", 2, "Padding between icons"),
         (
@@ -82,20 +83,18 @@ class LaunchBar(base._Widget):
         ),
         ("text_only", False, "Don't use any icons."),
         ("icon_size", None, "Size of icons. ``None`` to fit to bar."),
-        ("padding_y", 0, "Vertical adjustment for icons."),
         (
             "theme_path",
             None,
             "Path to icon theme to be used by pyxdg for icons. ``None`` will use default icon theme.",
         ),
+        ("markup", False, "Whether to allow markup in text label."),
     ]
 
-    def __init__(
-        self, _progs: list[tuple[str, str, str]] | None = None, width=bar.CALCULATED, **config
-    ):
+    def __init__(self, _progs: list[tuple[str, str, str]] | None = None, width=0, **config):
         base._Widget.__init__(self, width, **config)
         self.add_defaults(LaunchBar.defaults)
-        self.surfaces: dict[str, Img | base._TextBox] = {}
+        self.surfaces: dict[str, Img | TextLayout] = {}
         self.icons_files: dict[str, str | None] = {}
         self.icons_widths: dict[str, int] = {}
         self.icons_offsets: dict[str, int] = {}
@@ -126,14 +125,17 @@ class LaunchBar(base._Widget):
 
     def _configure(self, qtile, pbar):
         base._Widget._configure(self, qtile, pbar)
+        if self.fontsize is None:
+            self.fontsize = self.bar.size - self.bar.size / 5
         self.lookup_icons()
         self.setup_images()
         self.length = self.calculate_length()
 
     def setup_images(self):
         """Create image structures for each icon files."""
-        self._icon_size = self.icon_size if self.icon_size is not None else self.bar.height - 4
-        self._icon_padding = (self.bar.height - self._icon_size) // 2
+        if self.icon_size is None:
+            self._icon_size = self.bar.size - 4
+        self._icon_padding = (self.bar.size - self._icon_size) // 2
 
         for img_name, iconfile in self.icons_files.items():
             if iconfile is None or self.text_only:
@@ -146,20 +148,15 @@ class LaunchBar(base._Widget):
                     )
                 # if no icon is found and no default icon was set, we just
                 # print the name, based on a textbox.
-                textbox = base._TextBox()
-                textbox._configure(self.qtile, self.bar)
-                textbox.layout = self.drawer.textlayout(
-                    textbox.text,
+                textbox = self.drawer.textlayout(
+                    img_name,
                     self.foreground,
                     self.font,
                     self.fontsize,
                     self.fontshadow,
-                    markup=textbox.markup,
+                    markup=self.markup,
                 )
-                # the name will be displayed
-                textbox.text = img_name
-                textbox.calculate_length()
-                self.icons_widths[img_name] = textbox.width
+                self.icons_widths[img_name] = textbox.width + 2 * self.padding
                 self.surfaces[img_name] = textbox
                 continue
             else:
@@ -225,8 +222,14 @@ class LaunchBar(base._Widget):
 
     def get_icon_in_position(self, x, y):
         """Determine which icon is clicked according to its position."""
+        if self.bar.horizontal:
+            pos = x
+        elif self.bar.screen.left is self.bar:
+            pos = self.length - y
+        else:
+            pos = y
         for i in self.progs:
-            if x < (
+            if pos < (
                 self.icons_offsets[i]
                 + self.icons_widths[self.progs[i]["name"]]
                 + self.padding / 2
@@ -249,32 +252,34 @@ class LaunchBar(base._Widget):
     def draw(self):
         """Draw the icons in the widget."""
         self.drawer.clear(self.background or self.bar.background)
-        xoffset = 0
+
+        offset = 0
+        self.drawer.ctx.save()
+        self.rotate_drawer()
+
         for i in sorted(self.progs.keys()):
             self.drawer.ctx.save()
-            self.drawer.ctx.translate(xoffset, 0)
-            self.icons_offsets[i] = xoffset + self.padding
+            self.drawer.ctx.translate(offset, 0)
+            self.icons_offsets[i] = offset + self.padding
             name = self.progs[i]["name"]
             icon_width = self.icons_widths[name]
-            if isinstance(self.surfaces[name], base._TextBox):
+            if isinstance(self.surfaces[name], TextLayout):
                 # display the name if no icon was found and no default icon
                 textbox = self.surfaces[name]
-                textbox.layout.draw(
-                    self.padding + textbox.actual_padding,
-                    int((self.bar.height - textbox.layout.height) / 2.0) + 1,
-                )
+                textbox.draw(self.padding, int((self.bar.size - textbox.height) / 2) + 1)
             else:
                 # display an icon
                 # Translate to vertically centre the icon
-                self.drawer.ctx.translate(0, self._icon_padding + self.padding_y)
+                self.drawer.ctx.translate(0, self._icon_padding)
                 self.drawer.ctx.set_source(self.surfaces[name])
                 self.drawer.ctx.paint()
 
             self.drawer.ctx.restore()
 
-            xoffset += icon_width + self.padding
+            offset += icon_width + self.padding
 
-        self.drawer.draw(offsetx=self.offset, offsety=self.offsety, width=self.width)
+        self.drawer.ctx.restore()
+        self.draw_at_default_position()
 
     def calculate_length(self):
         """Compute the width of the widget according to each icon width."""

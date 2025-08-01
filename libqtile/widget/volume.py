@@ -105,7 +105,7 @@ class Volume(base._TextBox):
     ]
 
     def __init__(self, **config):
-        base._TextBox.__init__(self, "0", **config)
+        base._TextBox.__init__(self, "", **config)
         self.add_defaults(Volume.defaults)
         self.surfaces = {}
         self.volume = None
@@ -161,7 +161,7 @@ class Volume(base._TextBox):
 
     def _update_drawer(self):
         if self.mute_foreground is not None:
-            self.foreground = self.mute_foreground if self.is_mute else self.unmute_foreground
+            self.layout.colour = self.mute_foreground if self.is_mute else self.unmute_foreground
 
         if self.theme_path:
             self.drawer.clear(self.background or self.bar.background)
@@ -206,11 +206,11 @@ class Volume(base._TextBox):
             "audio-volume-muted",
         )
         d_images = images.Loader(self.theme_path)(*names)
+        new_height = self.bar.size - 2
         for name, img in d_images.items():
-            new_height = self.bar.height - 1
             img.resize(height=new_height)
             if img.width > self.length:
-                self.length = img.width + self.actual_padding * 2
+                self.length = img.width + self.padding * 2
             self.surfaces[name] = img.pattern
 
     def get_volume(self):
@@ -239,7 +239,7 @@ class Volume(base._TextBox):
 
     def draw(self):
         if self.theme_path:
-            self.drawer.draw(offsetx=self.offset, offsety=self.offsety, width=self.length)
+            self.draw_at_default_position()
         else:
             base._TextBox.draw(self)
 

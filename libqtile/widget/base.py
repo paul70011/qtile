@@ -159,6 +159,13 @@ class _Widget(CommandObject, configurable.Configurable):
             self.name = config["name"]
 
         configurable.Configurable.__init__(self, **config)
+
+        # Add defaults for Mixins if inherited
+        if isinstance(self, PaddingMixin):
+            self.add_defaults(PaddingMixin.defaults)
+        if isinstance(self, MarginMixin):
+            self.add_defaults(MarginMixin.defaults)
+
         self.add_defaults(_Widget.defaults)
 
         if length in (bar.CALCULATED, bar.STRETCH):
@@ -196,12 +203,6 @@ class _Widget(CommandObject, configurable.Configurable):
         if self.bar.horizontal:
             return self.bar.height
         return self.length
-
-    @property
-    def offset(self):
-        if self.bar.horizontal:
-            return self.offsetx
-        return self.offsety
 
     def _test_orientation_compatibility(self, horizontal):
         if horizontal:
@@ -253,6 +254,7 @@ class _Widget(CommandObject, configurable.Configurable):
             future.cancel()
         if hasattr(self, "layout") and self.layout:
             self.layout.finalize()
+            self.layout = None
         self.drawer.finalize()
         self.finalized = True
 
@@ -269,7 +271,7 @@ class _Widget(CommandObject, configurable.Configurable):
         """Info for this object."""
         return dict(
             name=self.name,
-            offset=self.offset,
+            offset=self.offsetx if self.bar.horizontal else self.offsety,
             length=self.length,
             width=self.width,
             height=self.height,
@@ -318,6 +320,30 @@ class _Widget(CommandObject, configurable.Configurable):
             return self.bar
         elif name == "screen":
             return self.bar.screen
+
+    def rotate_drawer_left(self):
+        # Left bar reads bottom to top
+        self.drawer.ctx.rotate(-90 * math.pi / 180.0)
+        self.drawer.ctx.translate(-self.length, 0)
+
+    def rotate_drawer_right(self):
+        # Right bar is top to bottom
+        self.drawer.ctx.translate(self.bar.width, 0)
+        self.drawer.ctx.rotate(90 * math.pi / 180.0)
+
+    def rotate_drawer(self):
+        if self.bar.horizontal:
+            return
+        if self.bar.screen.left is self.bar:
+            self.rotate_drawer_left()
+        elif self.bar.screen.right is self.bar:
+            self.rotate_drawer_right()
+
+    def draw_at_default_position(self):
+        """Default position to draw the widget in horizontal and vertical bars."""
+        self.drawer.draw(
+            offsetx=self.offsetx, offsety=self.offsety, width=self.width, height=self.height
+        )
 
     def draw(self):
         """
@@ -528,63 +554,22 @@ class _TextBox(_Widget):
             value = value[: self.max_chars] + "…"
         self._text = value
         if self.layout:
-            # Reset the layout width
-            # Reason is because, if we've manually set the layout width,
-            # adding longer text will result in wrapping which increases the height of the layout.
-            del self.layout.width
             self.layout.text = self.formatted_text
+
             if self.scroll:
                 self.check_width()
                 self.reset_scroll()
-
-            elif not self.bar.horizontal and not self.rotate:
-                self.layout.width = self.bar.width - 2 * self.actual_padding
 
     @property
     def formatted_text(self):
         return self.fmt.format(self._text)
 
-    @property
-    def foreground(self):
-        return self._foreground
-
-    @foreground.setter
-    def foreground(self, fg):
-        self._foreground = fg
-        if self.layout:
-            self.layout.colour = fg
-
-    @property
-    def font(self):
-        return self._font
-
-    @font.setter
-    def font(self, value):
-        self._font = value
-        if self.layout:
-            self.layout.font = value
-
-    @property
-    def fontshadow(self):
-        return self._fontshadow
-
-    @fontshadow.setter
-    def fontshadow(self, value):
-        self._fontshadow = value
-        if self.layout:
-            self.layout.font_shadow = value
-
-    @property
-    def actual_padding(self):
-        if self.padding is None:
-            return self.fontsize / 2
-        else:
-            return self.padding
-
     def _configure(self, qtile, bar):
         _Widget._configure(self, qtile, bar)
         if self.fontsize is None:
-            self.fontsize = self.bar.height - self.bar.height / 5
+            self.fontsize = self.bar.size - self.bar.size / 5
+        if self.padding is None:
+            self.padding = self.fontsize // 2
         if self.direction not in ("default", "ttb", "btt"):
             logger.warning(
                 "Invalid value set for direction: %s. Valid values are: 'default', 'ttb', 'btt'. "
@@ -603,22 +588,29 @@ class _TextBox(_Widget):
         if not isinstance(self._scroll_width, int) and self.scroll:
             if not self.bar.horizontal and not self.rotate:
                 self._scroll_width = self.bar.width
-                self.scroll_fixed_width = self.bar.width
             else:
                 logger.warning("%s: You must specify a width when enabling scrolling.", self.name)
                 self.scroll = False
 
+        # Setting the layout width will wrap text which increases layout's height,
+        # we only want this when bar is vertical and rotation is disabled
+        # to be able to display more of the text using multiple lines,
+        # only if scrolling is enabled the layout width will be overwritten
+        # because the widget's width is handle by scroll.
+        if not self.bar.horizontal and not self.rotate:
+            self.layout.width = self.bar.width
+
         if self.scroll:
             self.check_width()
-
-        elif not self.bar.horizontal and not self.rotate:
-            self.layout.width = self.bar.width - 2 * self.actual_padding
 
     def check_width(self):
         """
         Check whether the widget needs to have calculated or fixed width
         and whether the text should be scrolled.
         """
+        # Reset the layout width to let the layout calculate
+        # the width based on the length of the text.
+        self.layout.reset_width()
         if self.layout.width > self._scroll_width:
             if self.bar.horizontal or self.rotate:
                 self.length_type = bar.STATIC
@@ -627,7 +619,7 @@ class _TextBox(_Widget):
             self._should_scroll = True
         else:
             if not self.bar.horizontal and not self.rotate:
-                self.layout.width = self.scroll_fixed_width
+                self.layout.width = self.bar.width
             elif self.scroll_fixed_width:
                 self.length_type = bar.STATIC
                 self.length = self._scroll_width
@@ -636,76 +628,53 @@ class _TextBox(_Widget):
             self._should_scroll = False
 
     def calculate_length(self):
-        if self.text:
-            if self.bar.horizontal:
-                return min(self.layout.width, self.bar.width) + self.actual_padding * 2
-            else:
-                if self.rotate:
-                    return min(self.layout.width, self.bar.height) + self.actual_padding * 2
-                else:
-                    return self.layout.height + self.actual_padding * 2
-        else:
+        if not self.text:
             return 0
+        if not self.bar.horizontal and not self.rotate:
+            return self.layout.height + self.padding * 2
+        else:
+            return min(self.layout.width, self.bar.length) + self.padding * 2
 
     def can_draw(self):
-        can_draw = (
-            self.layout is not None and not self.layout.finalized() and self.offsetx is not None
-        )  # if the bar hasn't placed us yet
-        return can_draw
+        return self.layout is not None
+
+    def rotate_drawer(self):
+        if self.bar.horizontal or not self.rotate:
+            return
+        # Execute the base method when direction is default
+        if self.direction == "default":
+            _Widget.rotate_drawer(self)
+        # Read bottom to top always with 'btt' direction
+        elif self.direction == "btt":
+            self.rotate_drawer_left()
+        # Read top to bottom always with 'ttb' direction
+        elif self.direction == "ttb":
+            self.rotate_drawer_right()
 
     def draw(self):
         if not self.can_draw():
             return
         self.drawer.clear(self.background or self.bar.background)
-
-        # size = self.bar.height if self.bar.horizontal else self.bar.width
         self.drawer.ctx.save()
-
-        if not self.bar.horizontal and self.rotate:
-            # Left bar reads bottom to top
-            # Can be overriden to read bottom to top all the time with vertical_text_direction
-            if (
-                self.bar.screen.left is self.bar and self.direction == "default"
-            ) or self.direction == "btt":
-                self.drawer.ctx.rotate(-90 * math.pi / 180.0)
-                self.drawer.ctx.translate(-self.length, 0)
-
-            # Right bar is top to bottom
-            # Can be overriden to read top to bottom all the time with vertical_text_direction
-            elif (
-                self.bar.screen.right is self.bar and self.direction == "default"
-            ) or self.direction == "ttb":
-                self.drawer.ctx.translate(self.bar.width, 0)
-                self.drawer.ctx.rotate(90 * math.pi / 180.0)
+        self.rotate_drawer()
 
         # If we're scrolling, we clip the context to the scroll width less the padding
         # Move the text layout position (and we only see the clipped portion)
         if self._should_scroll:
-            self.drawer.ctx.rectangle(
-                self.actual_padding,
-                0,
-                self._scroll_width - 2 * self.actual_padding,
-                self.bar.size,
-            )
+            height = self.bar.size if self.bar.horizontal or self.rotate else self.length
+            self.drawer.ctx.rectangle(0, 0, self._scroll_width, height)
             self.drawer.ctx.clip()
 
-        if self.bar.horizontal:
-            size = self.bar.height
+        if not self.bar.horizontal and not self.rotate:
+            x, y = 0, self.padding
         else:
-            if self.rotate:
-                size = self.bar.width
-            else:
-                size = self.layout.height + self.actual_padding * 2
+            x = self.padding if self.length_type != bar.STATIC else 0
+            y = (self.bar.size - self.layout.height) / 2 + 1
 
-        self.layout.draw(
-            (self.actual_padding or 0) - self._scroll_offset,
-            int(size / 2.0 - self.layout.height / 2.0) + 1,
-        )
+        self.layout.draw(x - self._scroll_offset, y)
         self.drawer.ctx.restore()
 
-        self.drawer.draw(
-            offsetx=self.offsetx, offsety=self.offsety, width=self.width, height=self.height
-        )
+        self.draw_at_default_position()
 
         # We only want to scroll if:
         # - User has asked us to scroll and the scroll width is smaller than the layout (should_scroll=True)
@@ -732,8 +701,7 @@ class _TextBox(_Widget):
         # - the final pixel is visible (scroll_clear = False)
         if (self.scroll_clear and self._scroll_offset > self.layout.width) or (
             not self.scroll_clear
-            and (self.layout.width - self._scroll_offset)
-            < (self._scroll_width - 2 * self.actual_padding)
+            and (self.layout.width - self._scroll_offset) < (self._scroll_width)
         ):
             self._is_scrolling = False
 
@@ -777,12 +745,15 @@ class _TextBox(_Widget):
             self.fontsize = fontsize
         if fontshadow != "":
             self.fontshadow = fontshadow
+        if self.layout:
+            self.layout.font_family = self.font
+            self.layout.font_size = self.fontsize
+            self.layout.font_shadow = self.fontshadow
         self.bar.draw()
 
     @expose_command()
     def info(self):
         d = _Widget.info(self)
-        d["foreground"] = self.foreground
         d["text"] = self.formatted_text
         return d
 
@@ -914,12 +885,7 @@ class ThreadPoolText(_TextBox):
 
 
 class PaddingMixin(configurable.Configurable):
-    """Mixin that provides padding(_x|_y|)
-
-    To use it, subclass and add this to __init__:
-
-        self.add_defaults(base.PaddingMixin.defaults)
-    """
+    """Mixin that provides padding(_x|_y|)."""
 
     defaults = [
         ("padding", 3, "Padding inside the box"),
@@ -930,14 +896,21 @@ class PaddingMixin(configurable.Configurable):
     padding_x = configurable.ExtraFallback("padding_x", "padding")
     padding_y = configurable.ExtraFallback("padding_y", "padding")
 
+    @property
+    def padding_side(self):
+        if self.bar.horizontal:
+            return self.padding_x
+        return self.padding_y
+
+    @property
+    def padding_top(self):
+        if self.bar.horizontal:
+            return self.padding_y
+        return self.padding_x
+
 
 class MarginMixin(configurable.Configurable):
-    """Mixin that provides margin(_x|_y|)
-
-    To use it, subclass and add this to __init__:
-
-        self.add_defaults(base.MarginMixin.defaults)
-    """
+    """Mixin that provides margin(_x|_y|)."""
 
     defaults = [
         ("margin", 3, "Margin inside the box"),
@@ -947,6 +920,18 @@ class MarginMixin(configurable.Configurable):
 
     margin_x = configurable.ExtraFallback("margin_x", "margin")
     margin_y = configurable.ExtraFallback("margin_y", "margin")
+
+    @property
+    def margin_side(self):
+        if self.bar.horizontal:
+            return self.margin_x
+        return self.margin_y
+
+    @property
+    def margin_top(self):
+        if self.bar.horizontal:
+            return self.margin_y
+        return self.margin_x
 
 
 class Mirror(_Widget):
@@ -1006,7 +991,7 @@ class Mirror(_Widget):
             return
         self.drawer.clear_rect()
         self.reflects.drawer.paint_to(self.drawer)
-        self.drawer.draw(offsetx=self.offset, offsety=self.offsety, width=self.width)
+        self.draw_at_default_position()
 
     def button_press(self, x, y, button):
         self.reflects.button_press(x, y, button)

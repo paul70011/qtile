@@ -29,6 +29,7 @@ import pickle
 import shlex
 import shutil
 import signal
+import socket
 import subprocess
 import tempfile
 from collections import defaultdict
@@ -62,17 +63,19 @@ from libqtile.config import (
 )
 from libqtile.config import ScratchPad as ScratchPadConfig
 from libqtile.core.lifecycle import lifecycle
-from libqtile.core.loop import LoopContext, QtileEventLoopPolicy
+from libqtile.core.loop import LoopContext
 from libqtile.core.state import QtileState
 from libqtile.dgroups import DGroups
 from libqtile.extension.base import _Extension
 from libqtile.group import _Group
+from libqtile.interactive.repl import repl_server
 from libqtile.log_utils import logger
 from libqtile.resources.sleep import inhibitor
 from libqtile.scratchpad import ScratchPad
 from libqtile.scripts.main import VERSION
 from libqtile.utils import (
     cancel_tasks,
+    create_task,
     get_cache_dir,
     lget,
     remove_dbus_rules,
@@ -126,6 +129,7 @@ class Qtile(CommandObject):
         self.screens: list[Screen] = []
 
         libqtile.init(self)
+        libqtile.event_loop = asyncio.new_event_loop()
 
         self._stopped_event: asyncio.Event | None = None
 
@@ -156,7 +160,9 @@ class Qtile(CommandObject):
         for grp in self.config.groups:
             if isinstance(grp, ScratchPadConfig):
                 sp = ScratchPad(grp.name, grp.dropdowns, grp.label, grp.single)
-                sp._configure([self.config.floating_layout], self.config.floating_layout, self)
+                sp._configure(
+                    [self.config.floating_layout], self.config.floating_layout, self
+                )
                 self.groups.append(sp)
                 self.groups_map[sp.name] = sp
 
@@ -168,13 +174,6 @@ class Qtile(CommandObject):
 
         for button in self.config.mouse:
             self.grab_button(button)
-
-        # no_spawn is set after the very first startup; we only want to run the
-        # startup hook once.
-        if not self.no_spawn:
-            hook.fire("startup_once")
-            self.no_spawn = True
-        hook.fire("startup")
 
         if self._state:
             if isinstance(self._state, str):
@@ -191,6 +190,18 @@ class Qtile(CommandObject):
 
         self.core.on_config_load(initial)
 
+        if self.config.reconfigure_screens:
+            hook.subscribe.screen_change(self.reconfigure_screens)
+
+        # no_spawn is set after the very first startup; we only want to run the
+        # startup hook once. Note that this needs to happen *after* the config
+        # is loaded and we have subscribed reconfigure_screens() in case people
+        # do xrandr style manipulation in this hook.
+        if not self.no_spawn:
+            hook.fire("startup_once")
+            self.no_spawn = True
+        hook.fire("startup")
+
         if self._state:
             for screen in self.screens:
                 screen.group.layout.show(screen.get_rect())
@@ -198,9 +209,6 @@ class Qtile(CommandObject):
         self._state = None
         self.update_desktops()
         hook.subscribe.setgroup(self.update_desktops)
-
-        if self.config.reconfigure_screens:
-            hook.subscribe.screen_change(self.reconfigure_screens)
 
         # Start the sleep inhibitor process to listen to sleep signals
         # NB: the inhibitor will only connect to the dbus service if the
@@ -223,7 +231,7 @@ class Qtile(CommandObject):
         return socket_path
 
     def loop(self) -> None:
-        asyncio.run(self.async_loop())
+        asyncio.run(self.async_loop(), loop_factory=lambda: libqtile.event_loop)
 
     async def async_loop(self) -> None:
         """Run the event loop
@@ -231,8 +239,6 @@ class Qtile(CommandObject):
         Finalizes the Qtile instance on exit.
         """
         self._eventloop = asyncio.get_running_loop()
-        # Set the event loop policy to facilitate access to main event loop
-        asyncio.set_event_loop_policy(QtileEventLoopPolicy(self))
         self._stopped_event = asyncio.Event()
         self.core.qtile = self
         self.load_config(initial=True)
@@ -354,6 +360,7 @@ class Qtile(CommandObject):
 
             for screen in self.screens:
                 screen.finalize_gaps()
+
         except:  # noqa: E722
             logger.exception("exception during finalize")
         hook.clear()
@@ -399,7 +406,9 @@ class Qtile(CommandObject):
             xywh: dict[tuple[int, int], tuple[int, int, str | None, str | None]] = {}
             for info in self.core.get_screen_info():
                 pos = (info.x, info.y)
-                width, height, serial, name = xywh.get(pos, (0, 0, info.serial, info.name))
+                width, height, serial, name = xywh.get(
+                    pos, (0, 0, info.serial, info.name)
+                )
                 # if one monitor is wider and one monitor is longer, either
                 # serial number was valid (i.e. we could choose either, since
                 # we're going to project over the whole space). just pick one.
@@ -470,7 +479,8 @@ class Qtile(CommandObject):
             # If the screen has changed position and/or size, or is a new screen then make sure that any gaps/bars
             # are reconfigured
             reconfigure_gaps = (
-                (info.x, info.y, info.width, info.height) != (scr.x, scr.y, scr.width, scr.height)
+                (info.x, info.y, info.width, info.height)
+                != (scr.x, scr.y, scr.width, scr.height)
             ) or (i + 1 > len(self.screens))
 
             if not hasattr(scr, "group"):
@@ -496,9 +506,7 @@ class Qtile(CommandObject):
 
         for screen in self.screens:
             if screen not in screens:
-                for gap in screen.gaps:
-                    if isinstance(gap, bar.Bar) and gap.window:
-                        gap.finalize()
+                screen.finalize_gaps()
 
         self.screens = screens
 
@@ -522,13 +530,17 @@ class Qtile(CommandObject):
 
         hook.fire("screens_reconfigured")
 
-    def paint_screen(self, screen: Screen, image_path: str, mode: str | None = None) -> None:
+    def paint_screen(
+        self, screen: Screen, image_path: str, mode: str | None = None
+    ) -> None:
         self.core.painter.paint(screen, image_path, mode)
 
     def fill_screen(self, screen: Screen, background: ColorType) -> None:
         self.core.painter.fill(screen, background)
 
-    def process_key_event(self, keysym: int, mask: int) -> tuple[Key | KeyChord | None, bool]:
+    def process_key_event(
+        self, keysym: int, mask: int
+    ) -> tuple[Key | KeyChord | None, bool]:
         key = self.keys_map.get((keysym, mask), None)
         if key is None:
             logger.debug("Ignoring unknown keysym: %s, mask: %s", keysym, mask)
@@ -547,7 +559,9 @@ class Qtile(CommandObject):
                     if status in (interface.ERROR, interface.EXCEPTION):
                         logger.error("KB command error %s: %s", cmd.name, val)
                     executed = True
-            if self.chord_stack and (not self.chord_stack[-1].mode or key.key == "Escape"):
+            if self.chord_stack and (
+                not self.chord_stack[-1].mode or key.key == "Escape"
+            ):
                 self.ungrab_chord()
             # We never swallow when no commands have been executed,
             # even when key.swallow is set to True
@@ -812,20 +826,16 @@ class Qtile(CommandObject):
     def unmanage(self, wid: int) -> None:
         c = self.windows_map.get(wid)
         if c:
-            group = None
+            # Fire the hook before removing the group from the window so hooked
+            # functions can access it
+            hook.fire("client_killed", c)
             if isinstance(c, base.Static):
                 if c.reserved_space:
                     self.free_reserved_space(c.reserved_space, c.screen)
             elif isinstance(c, base.Window):
                 if c.group:
-                    group = c.group
                     c.group.remove(c)
             del self.windows_map[wid]
-
-            if isinstance(c, base.Window):
-                # Put the group back on the window so hooked functions can access it.
-                c.group = group
-            hook.fire("client_killed", c)
 
     def find_screen(self, x: int, y: int) -> Screen | None:
         """Find a screen based on the x and y offset"""
@@ -865,7 +875,9 @@ class Qtile(CommandObject):
             return y_match[0]
         return self._find_closest_closest(x, y, x_match + y_match)
 
-    def _find_closest_closest(self, x: int, y: int, candidate_screens: list[Screen]) -> Screen:
+    def _find_closest_closest(
+        self, x: int, y: int, candidate_screens: list[Screen]
+    ) -> Screen:
         """
         if find_closest_screen can't determine one, we've got multiple
         screens, so figure out who is closer.  We'll calculate using
@@ -899,7 +911,9 @@ class Qtile(CommandObject):
             if isinstance(window, base.Window):
                 window.focus()
 
-    def process_button_click(self, button_code: int, modmask: int, x: int, y: int) -> bool:
+    def process_button_click(
+        self, button_code: int, modmask: int, x: int, y: int
+    ) -> bool:
         handled = False
         for m in self._mouse_map[button_code]:
             if not m.modmask == modmask:
@@ -917,13 +931,17 @@ class Qtile(CommandObject):
                             logger.error("Mouse command error %s: %s", i.name, val)
                         handled = True
             elif (
-                isinstance(m, Drag) and self.current_window and not self.current_window.fullscreen
+                isinstance(m, Drag)
+                and self.current_window
+                and not self.current_window.fullscreen
             ):
                 if self.config.follow_mouse_focus == "click_or_drag_only":
                     self._focus_hovered_window()
                 if m.start:
                     i = m.start
-                    status, val = self.server.call((i.selectors, i.name, i.args, i.kwargs, False))
+                    status, val = self.server.call(
+                        (i.selectors, i.name, i.args, i.kwargs, False)
+                    )
                     if status in (interface.ERROR, interface.EXCEPTION):
                         logger.error("Mouse command error %s: %s", i.name, val)
                         continue
@@ -1007,7 +1025,9 @@ class Qtile(CommandObject):
         elif name == "widget":
             return False, list(self.widgets_map.keys())
         elif name == "bar":
-            return False, [x.position for x in self.current_screen.gaps if isinstance(x, bar.Bar)]
+            return False, [
+                x.position for x in self.current_screen.gaps if isinstance(x, bar.Bar)
+            ]
         elif name == "window":
             windows: list[str | int]
             windows = [
@@ -1078,7 +1098,9 @@ class Qtile(CommandObject):
 
         return self._eventloop.call_soon_threadsafe(f)
 
-    def call_later(self, delay: int | float, func: Callable, *args: Any) -> asyncio.TimerHandle:
+    def call_later(
+        self, delay: int | float, func: Callable, *args: Any
+    ) -> asyncio.TimerHandle:
         """Another event loop proxy, see `call_soon`."""
 
         def f() -> None:
@@ -1183,7 +1205,9 @@ class Qtile(CommandObject):
 
             def __str__(self) -> str:
                 format_, n = self.getformat()
-                return "".join(format_ % tuple(self.expandlist(row, n)) for row in self.rows)
+                return "".join(
+                    format_ % tuple(self.expandlist(row, n)) for row in self.rows
+                )
 
         result = FormatTable()
         result.add(["Mode", "KeySym", "Mod", "Command", "Desc"])
@@ -1353,7 +1377,11 @@ class Qtile(CommandObject):
 
     @expose_command()
     def spawn(
-        self, cmd: list[str] | str, shell: bool = False, env: dict[str, str] = dict()
+        self,
+        cmd: list[str] | str,
+        shell: bool = False,
+        env: dict[str, str] = dict(),
+        group: str | None = None,
     ) -> int:
         """
         Spawn a new process.
@@ -1367,6 +1395,8 @@ class Qtile(CommandObject):
             -c". This enables the use of shell syntax within the command (e.g. pipes).
         env:
             Dictionary of environmental variables to pass with command.
+        group:
+            Name of group in which to spawn process.
 
         Examples
         ========
@@ -1407,9 +1437,24 @@ class Qtile(CommandObject):
                 (os.POSIX_SPAWN_DUP2, 2, null.fileno()),
             ]
 
+            # To create a rule to move process to a specific group and manage race conditions
+            # we need to do the following:
+            # 1) Create a socket pair so we can communicate to child process
+            # 2) Spawn a "qtile launch" process and pass the file descriptor
+            # 3) Have "qtile launch" notify qtile that it's ready
+            # 4) Create a rule using the pid from step 2
+            # 5) Send a message over the socket to "qtile launch"
+            # 6) Once the message is received, "qtile launch" execs the desired process
+            if group is not None:
+                parent_sock, child_sock = socket.socketpair()
+                # socket pair fds are non-inheritable by default but we need this to survice
+                os.set_inheritable(child_sock.fileno(), True)
+
             # this API is only available on python 3.13 or above, and only on platforms
             # where posix_spawn_file_actions_addclosefrom_np() exists (only glibc on Linux).
-            if hasattr(os, "POSIX_SPAWN_CLOSEFROM"):
+            # where we're creating a rule to manage the group, we'll handle closing fds in
+            # `qtile launch`
+            if hasattr(os, "POSIX_SPAWN_CLOSEFROM") and group is None:
                 # we should close all fds so that child processes don't
                 # accidentally write to our x11 event loop or whatever; we never
                 # used to do this, so it seems fine to only do it where this nice
@@ -1417,7 +1462,28 @@ class Qtile(CommandObject):
                 file_actions.append((os.POSIX_SPAWN_CLOSEFROM, 3))
 
             try:
-                return os.posix_spawnp(args[0], args, env, file_actions=file_actions)
+                if group is not None:
+                    # As per step 2 (above) we want to launch the process via "qtile launch"
+                    args = ["qtile", "launch", "--fd", f"{child_sock.fileno()}"] + args
+                pid = os.posix_spawnp(args[0], args, env, file_actions=file_actions)
+                if group is not None:
+                    # Listen for READY message from `qtile launch`
+                    data = parent_sock.recv(5)
+
+                    if data != b"READY":
+                        logger.warning("Received unexpected data: {data!r}")
+
+                    # Create the group matching rule
+                    match_args = {"net_wm_pid": pid}
+                    rule_args = {"group": group, "one_time": True}
+                    self.add_rule(match_args=match_args, rule_args=rule_args)
+
+                    # Tell child process it can now spawn main proces as rule has been added
+                    parent_sock.send(b"OK")
+
+                    parent_sock.close()
+                    child_sock.close()
+                return pid
             except OSError as e:
                 logger.warning("failed to execute: %s: %s", str(args), str(e))
                 return -1
@@ -1448,12 +1514,16 @@ class Qtile(CommandObject):
     @expose_command()
     def next_screen(self) -> None:
         """Move to next screen"""
-        self.focus_screen((self.screens.index(self.current_screen) + 1) % len(self.screens))
+        self.focus_screen(
+            (self.screens.index(self.current_screen) + 1) % len(self.screens)
+        )
 
     @expose_command()
     def prev_screen(self) -> None:
         """Move to the previous screen"""
-        self.focus_screen((self.screens.index(self.current_screen) - 1) % len(self.screens))
+        self.focus_screen(
+            (self.screens.index(self.current_screen) - 1) % len(self.screens)
+        )
 
     @expose_command()
     def windows(self) -> list[dict[str, Any]]:
@@ -1461,13 +1531,16 @@ class Qtile(CommandObject):
         return [
             i.info()
             for i in self.windows_map.values()
-            if not isinstance(i, base.Internal | _Widget) and isinstance(i, CommandObject)
+            if not isinstance(i, base.Internal | _Widget)
+            and isinstance(i, CommandObject)
         ]
 
     @expose_command()
     def internal_windows(self) -> list[dict[str, Any]]:
         """Return info for each internal window (bars, for example)"""
-        return [i.info() for i in self.windows_map.values() if isinstance(i, base.Internal)]
+        return [
+            i.info() for i in self.windows_map.values() if isinstance(i, base.Internal)
+        ]
 
     @expose_command()
     def qtile_info(self) -> dict:
@@ -1839,7 +1912,9 @@ class Qtile(CommandObject):
                 bar.show(not bar.is_show())
                 self.current_group.layout_all()
             else:
-                logger.warning("Not found bar in position '%s' for hide/show.", position)
+                logger.warning(
+                    "Not found bar in position '%s' for hide/show.", position
+                )
         elif position == "all":
             is_show = None
             for bar in [screen.left, screen.right, screen.top, screen.bottom]:
@@ -1905,3 +1980,14 @@ class Qtile(CommandObject):
     def fire_user_hook(self, hook_name: str, *args: Any) -> None:
         """Fire a custom hook."""
         hook.fire(f"user_{hook_name}", *args)
+
+    @expose_command()
+    def start_repl_server(self, locals_dict: dict[str, Any] = dict()) -> None:
+        """Start the REPL server."""
+        _locals = {"qtile": self, **locals_dict}
+        create_task(repl_server.start(locals_dict=_locals))
+
+    @expose_command()
+    def stop_repl_server(self) -> None:
+        """Stop the REPL server."""
+        create_task(repl_server.stop())

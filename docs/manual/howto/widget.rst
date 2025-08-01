@@ -104,28 +104,15 @@ or more mixins to provide some additional functionality to the widget.
 PaddingMixin
 ------------
 
-This provides the ``padding(_x|_y|)`` attributes which can be used to change the appearance
-of the widget.
-
-If you use this mixin in your widget, you need to add the following line to your ``__init__``
-method:
-
-.. code:: python
-
-    self.add_defaults(base.PaddingMixin.defaults)
+This provides the ``padding(_x|_y|)`` attributes which can be used to change the
+appearance of the widget. And ``padding(_side|_top|)`` properties to get the appropriate
+value based on bar orientation.
 
 MarginMixin
 -----------
 
-The ``MarginMixin`` is essentially effectively exactly the same as the ``PaddingMixin`` but,
-instead, it provides the ``margin(_x|_y|)`` attributes.
-
-As above, if you use this mixin in your widget, you need to add the following line to your
-``__init__`` method:
-
-.. code:: python
-
-    self.add_defaults(base.MarginMixin.defaults)
+This is essentially exactly the same as the before, but instead, it provides the
+``margin(_x|_y|)`` attributes. And the bar oriented ``margin(_side|_top|)`` properties.
 
 Configuration
 =============
@@ -202,13 +189,13 @@ drawings are set out below.
 
 It is important to note that the bar controls the placing of the widget by
 assigning the ``offsetx`` value (for horizontal positioning) and ``offsety``
-value (for vertical positioning). Widgets should use this at the end of the
-``draw`` method. Both ``offsetx`` and ``offsety`` are required as both values will
-be set if the bar is drawing a border.
+value (for vertical positioning). While the widget controls its ``width`` and
+``height``. These four values should be use at the end of the ``draw`` method.
+It is recommended to call this helper function to do it automatically:
 
 .. code:: python
 
-    self.drawer.draw(offsetx=self.offsetx, offsety=self.offsety, width=self.width)
+    self.draw_at_default_position()
 
 .. note::
 
@@ -269,8 +256,8 @@ most commonly used to draw icons but the same method applies to other images.
 
         d_images = images.Loader(self.imagefolder)(*names)  # images.Loader can take more than one folder as an argument
 
+        new_height = self.bar.size - 2
         for name, img in d_images.items():
-            new_height = self.bar.height - 1
             img.resize(height=new_height)   # Resize images to fit widget
             self.surfaces[name] = img.pattern  # Images added to the `surfaces` dictionary
 
@@ -281,7 +268,7 @@ Drawing the image is then just a matter of painting it to the relevant surface:
     def draw(self):
         self.drawer.ctx.set_source(self.surfaces[img_name])  # Use correct key here for your image
         self.drawer.ctx.paint()
-        self.drawer.draw(offsetx=self.offset, width=self.length)
+        self.draw_at_default_position()
 
 Drawing shapes
 --------------
@@ -311,7 +298,7 @@ For example, the following code can draw a wifi icon showing signal strength:
         WIFI_HEIGHT = 12
         WIFI_ARC_DEGREES = 90
 
-        y_margin = (self.bar.height - WIFI_HEIGHT) / 2
+        y_margin = (self.bar.size - WIFI_HEIGHT) / 2
         half_arc = WIFI_ARC_DEGREES / 2
 
         # Draw grey background
@@ -352,6 +339,17 @@ background. Usually this is done by including the following line at the start of
 
 The background can be a single colour or a list of colours which will result in a linear gradient
 from top to bottom.
+
+Vertical Orientation
+--------------------
+
+If you plan to support vertical orientation in your widget, after calling
+``self.drawer.clear`` and ``self.drawer.ctx.save`` place this function
+in the ``draw`` method:
+
+.. code:: python
+
+    self.rotate_drawer()
 
 Updating the widget
 ===================
@@ -678,10 +676,3 @@ of the bar then you need a few extra steps:
         # Take a screenshot. Will take screenshot of whole bar unless
         # a `width` parameter is set.
         bar.take_screenshot(target, width=width)
-
-Getting help
-============
-
-If you still need help with developing your widget then please submit a question in the
-`qtile-dev group <https://groups.google.com/forum/#!forum/qtile-dev>`_ or submit an issue
-on the github page if you believe there's an error in the codebase.

@@ -36,15 +36,12 @@ class Image(base._Widget, base.MarginMixin):
         ("scale", True, "Enable/Disable image scaling"),
         ("rotate", 0.0, "rotate the image in degrees counter-clockwise"),
         ("filename", None, "Image filename. Can contain '~'"),
+        ("margin", 0, "Margin inside the box. Defaults to 0."),
     ]
 
     def __init__(self, length=bar.CALCULATED, **config):
         base._Widget.__init__(self, length, **config)
         self.add_defaults(Image.defaults)
-        self.add_defaults(base.MarginMixin.defaults)
-
-        # make the default 0 instead
-        self._variable_defaults["margin"] = 0
 
     def _configure(self, qtile, bar):
         base._Widget._configure(self, qtile, bar)
@@ -68,12 +65,8 @@ class Image(base._Widget, base.MarginMixin):
         img.theta = self.rotate
         if not self.scale:
             return
-        if self.bar.horizontal:
-            new_height = self.bar.height - (self.margin_y * 2)
-            img.resize(height=new_height)
-        else:
-            new_width = self.bar.width - (self.margin_x * 2)
-            img.resize(width=new_width)
+        new_height = self.bar.size - (self.margin_top * 2)
+        img.resize(height=new_height)
 
     def draw(self):
         if self.img is None:
@@ -85,20 +78,13 @@ class Image(base._Widget, base.MarginMixin):
         self.drawer.ctx.set_source(self.img.pattern)
         self.drawer.ctx.paint()
         self.drawer.ctx.restore()
-
-        if self.bar.horizontal:
-            self.drawer.draw(offsetx=self.offset, offsety=self.offsety, width=self.width)
-        else:
-            self.drawer.draw(offsety=self.offset, offsetx=self.offsetx, height=self.width)
+        self.draw_at_default_position()
 
     def calculate_length(self):
         if self.img is None:
             return 0
-
-        if self.bar.horizontal:
-            return self.img.width + (self.margin_x * 2)
-        else:
-            return self.img.height + (self.margin_y * 2)
+        img_length = self.img.width if self.bar.horizontal else self.img.height
+        return img_length + (self.margin_side * 2)
 
     @expose_command()
     def update(self, filename):

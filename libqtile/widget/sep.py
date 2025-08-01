@@ -45,23 +45,21 @@ class Sep(base._Widget):
 
     def draw(self):
         self.drawer.clear(self.background or self.bar.background)
+        margin = (self.bar.size / float(100) * (100 - self.size_percent)) / 2.0
         if self.bar.horizontal:
-            margin_top = (self.bar.height / float(100) * (100 - self.size_percent)) / 2.0
             self.drawer.draw_vbar(
                 self.foreground,
                 float(self.length) / 2,
-                margin_top,
-                self.bar.height - margin_top,
+                margin,
+                self.bar.size - margin,
                 linewidth=self.linewidth,
             )
-            self.drawer.draw(offsetx=self.offset, offsety=self.offsety, width=self.length)
         else:
-            margin_left = (self.bar.width / float(100) * (100 - self.size_percent)) / 2.0
             self.drawer.draw_hbar(
                 self.foreground,
-                margin_left,
-                self.bar.width - margin_left,
+                margin,
+                self.bar.size - margin,
                 float(self.length) / 2,
                 linewidth=self.linewidth,
             )
-            self.drawer.draw(offsety=self.offset, offsetx=self.offsetx, height=self.length)
+        self.draw_at_default_position()

@@ -231,7 +231,7 @@ class Section(TreeNode):
         self.title = title
 
     def draw(self, layout, top, level=0):
-        del layout._layout.width  # no centering
+        layout._layout.reset_width()  # no centering
         # draw a horizontal line above the section
         layout._drawer.draw_hbar(layout.section_fg, 0, layout.panel_width, top, linewidth=1)
         # draw the section title
@@ -362,8 +362,6 @@ class TreeTab(Layout):
         ("urgent_fg", "ffffff", "Foreground color of urgent tab"),
         ("inactive_bg", "606060", "Background color of inactive tab"),
         ("inactive_fg", "ffffff", "Foreground color of inactive tab"),
-        ("margin_left", 6, "Left margin of tab panel"),
-        ("margin_y", 6, "Vertical margin of tab panel"),
         ("padding_left", 6, "Left padding for tabs"),
         ("padding_x", 6, "Left padding for tab label"),
         ("padding_y", 2, "Top padding for tab label"),

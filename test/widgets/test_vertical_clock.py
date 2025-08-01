@@ -24,8 +24,8 @@ from importlib import reload
 import pytest
 
 from libqtile.config import Bar, Screen
-from libqtile.confreader import Config
 from libqtile.widget import vertical_clock
+from test.helpers import BareConfig
 
 
 # Mock Datetime object that returns a set datetime and also
@@ -71,7 +71,7 @@ def patched_clock(monkeypatch):
 
 @pytest.fixture(scope="function")
 def vclock_manager(manager_nospawn, request, patched_clock):
-    class VClockConfig(Config):
+    class VClockConfig(BareConfig):
         screens = [
             Screen(
                 left=Bar(
@@ -108,8 +108,10 @@ def test_vclock_extra_lines(vclock_manager):
     [
         dict(fontsize=[10]),  # too few
         dict(fontsize=[10, 20, 30, 40]),  # too many
+        dict(fontsize=[10, "fff"]),  # mix values
         dict(foreground=["fff"]),  # too few
         dict(foreground=["fff"] * 4),  # too many
+        dict(foreground=["fff", 10]),  # mix values
     ],
     indirect=True,
 )

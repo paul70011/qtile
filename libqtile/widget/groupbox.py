@@ -48,8 +48,6 @@ class _GroupBase(base._TextBox, base.PaddingMixin, base.MarginMixin):
     def __init__(self, **config):
         base._TextBox.__init__(self, **config)
         self.add_defaults(_GroupBase.defaults)
-        self.add_defaults(base.PaddingMixin.defaults)
-        self.add_defaults(base.MarginMixin.defaults)
 
     def box_width(self, groups):
         width, _ = self.drawer.max_layout_size(
@@ -61,7 +59,7 @@ class _GroupBase(base._TextBox, base.PaddingMixin, base.MarginMixin):
         base._Widget._configure(self, qtile, bar)
 
         if self.fontsize is None:
-            calc = self.bar.height - self.margin_y * 2 - self.borderwidth * 2 - self.padding_y * 2
+            calc = self.bar.size - self.margin_y * 2 - self.borderwidth * 2 - self.padding_y * 2
             self.fontsize = max(calc, 1)
 
         self.layout = self.drawer.textlayout(
@@ -104,15 +102,13 @@ class _GroupBase(base._TextBox, base.PaddingMixin, base.MarginMixin):
         highlighted=False,
     ):
         self.layout.text = self.fmt.format(text)
-        self.layout.font_family = self.font
-        self.layout.font_size = self.fontsize
         self.layout.colour = textcolor
         if width is not None:
             self.layout.width = width
         if line:
             pad_y = [
-                (self.bar.height - self.layout.height - self.borderwidth) / 2,
-                (self.bar.height - self.layout.height + self.borderwidth) / 2,
+                (self.bar.size - self.layout.height - self.borderwidth) / 2,
+                (self.bar.size - self.layout.height + self.borderwidth) / 2,
             ]
         else:
             pad_y = self.padding_y
@@ -130,10 +126,7 @@ class _GroupBase(base._TextBox, base.PaddingMixin, base.MarginMixin):
         framed = self.layout.framed(border_width, framecolor, 0, pad_y, highlight_color)
         y = self.margin_y
         if self.center_aligned:
-            for t in base.MarginMixin.defaults:
-                if t[0] == "margin":
-                    y += (self.bar.height - framed.height) / 2 - t[1]
-                    break
+            y += (self.bar.size - framed.height) / 2 - self.margin_y
         if block and bordercolor is not None:
             framed.draw_fill(offset, y, rounded)
         elif line:
@@ -167,7 +160,7 @@ class AGroupBox(_GroupBase):
         self.drawer.clear(self.background or self.bar.background)
         e = next(i for i in self.qtile.groups if i.name == self.bar.screen.group.name)
         self.drawbox(self.margin_x, e.name, self.border, self.foreground)
-        self.drawer.draw(offsetx=self.offset, offsety=self.offsety, width=self.width)
+        self.draw_at_default_position()
 
 
 class GroupBox(_GroupBase):
@@ -409,4 +402,4 @@ class GroupBox(_GroupBase):
                 highlighted=to_highlight,
             )
             offset += bw + self.spacing
-        self.drawer.draw(offsetx=self.offset, offsety=self.offsety, width=self.width)
+        self.draw_at_default_position()
