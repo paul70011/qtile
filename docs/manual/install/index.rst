@@ -32,7 +32,7 @@ Python interpreters
 We aim to always support the last three versions of CPython, the reference
 Python interpreter. We usually support the latest stable version of PyPy_ as
 well. You can check the versions and interpreters we currently run our test
-suite against in our `tox configuration file`_.
+suite against in our `CI configuration file`_.
 
 There are not many differences between versions aside from Python features you
 may or may not be able to use in your config. PyPy should be faster at runtime
@@ -40,7 +40,7 @@ than any corresponding CPython version under most circumstances, especially for
 bits of Python code that are run many times. CPython should start up faster than
 PyPy and has better compatibility for external libraries.
 
-.. _`tox configuration file`: https://github.com/qtile/qtile/blob/master/tox.ini
+.. _`CI configuration file`: https://github.com/qtile/qtile/blob/master/.github/workflows/ci.yml
 .. _PyPy: https://www.pypy.org/
 
 
@@ -190,22 +190,10 @@ backlight, keyboard backlight, battery charge thresholds) via the kernel's
 exposed sysfs endpoints. However, to make this work, Qtile needs permission to
 write to these files. There is a udev rules file at
 ``/resources/99-qtile.rules`` in the tree, which users installing from source
-will want to install at ``/etc/udev/rules.d/`` on their system. By default,
-this rules file changes the group of the relevant files to the ``sudo`` group,
-and changes the file mode to be g+w (i.e. writable by all members of the sudo
-group). The theory here is that most systems qtile is installed on will also
-have the primary user in the ``sudo`` group. However, you can change this to
-whatever you like with the ``--group`` argument; see the sample udev rules.
-
-Note that this file invokes Qtile's hidden ``udev`` from udevd, so udevd will
-need ``qtile`` in its ``$PATH``. For distro packaging this shouldn't be a
-problem, since /usr/bin is typically in udev's path. Alternatively, users can
-install from source using uv, which will do all the right ``$PYTHONPATH``
-setup etc., so you only need to change the path to the final executable in the
-udev rules:
+will want to install at ``/etc/udev/rules.d/`` on their system. You can
+install it manually with:
 
 .. code-block:: bash
 
-    # copy the in-tree udev rules file to the right place to make udev see it,
-    # and change the rules to point at our wrapper script above.
-    sed "s,qtile,$HOME/.local/bin/qtile,g" ./resources/99-qtile.rules | sudo tee /etc/udev/rules.d/99-qtile.rules
+    # copy the in-tree udev rules file to the right place to make udev see it
+    cat ./resources/99-qtile.rules | sudo tee /etc/udev/rules.d/99-qtile.rules
