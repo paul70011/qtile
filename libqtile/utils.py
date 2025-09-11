@@ -28,6 +28,7 @@ import os
 import traceback
 from collections import defaultdict
 from collections.abc import Sequence
+from importlib.metadata import PackageNotFoundError, distribution
 from pathlib import Path
 from random import randint
 from shutil import which
@@ -53,11 +54,16 @@ if TYPE_CHECKING:
 
     T = TypeVar("T")
 
+try:
+    VERSION = distribution("qtile").version
+except PackageNotFoundError:
+    VERSION = "dev"
+
 dbus_bus_connections = set()
 
 # Create a list to collect references to tasks so they're not garbage collected
 # before they've run
-TASKS: list[asyncio.Task[None]] = []
+TASKS: set[asyncio.Task[None]] = set()
 
 
 def create_task(coro: Coroutine) -> asyncio.Task | None:
@@ -72,20 +78,11 @@ def create_task(coro: Coroutine) -> asyncio.Task | None:
     if not loop:
         return None
 
-    def tidy(task: asyncio.Task) -> None:
-        TASKS.remove(task)
-
     task = asyncio.create_task(coro)
-    TASKS.append(task)
-    task.add_done_callback(tidy)
+    TASKS.add(task)
+    task.add_done_callback(TASKS.discard)
 
     return task
-
-
-def cancel_tasks() -> None:
-    """Cancel scheduled tasks."""
-    for task in TASKS:
-        task.cancel()
 
 
 class QtileError(Exception):
@@ -295,6 +292,9 @@ def send_notification(
     passed when calling this function again to replace that notification. See:
     https://developer.gnome.org/notification-spec/
     """
+    if "PYTEST_CURRENT_TEST" in os.environ:
+        logger.warning("skipped notification because we are in tests")
+        return -1
     if not has_dbus:
         logger.warning("dbus-fast is not installed. Unable to send notifications.")
         return -1
@@ -355,30 +355,39 @@ def guess_terminal(preference: str | Sequence | None = None) -> str | None:
         test_terminals += list(preference)
     if "WAYLAND_DISPLAY" in os.environ:
         # Wayland-only terminals
-        test_terminals += ["foot"]
+        test_terminals += [
+            "foot",
+            "mlterm-wl",
+        ]
     test_terminals += [
-        "roxterm",
-        "sakura",
-        "hyper",
         "alacritty",
-        "terminator",
-        "termite",
+        "cool-retro-term",
+        "coreterminal",
+        "eterm",
+        "ghostty",
         "gnome-terminal",
+        "guake",
+        "hyper",
+        "kitty",
         "konsole",
-        "xfce4-terminal",
         "lxterminal",
         "mate-terminal",
-        "kitty",
-        "ghostty",
-        "yakuake",
-        "tilda",
-        "guake",
-        "eterm",
+        "mlterm",
+        "ptyxis",
+        "qterminal",
+        "roxterm",
+        "sakura",
         "st",
+        "terminator",
+        "terminology",
+        "tilda",
         "urxvt",
         "wezterm",
-        "xterm",
         "x-terminal-emulator",
+        "xfce4-terminal",
+        "xterm",
+        "yakuake",
+        "zutty",
     ]
 
     for terminal in test_terminals:

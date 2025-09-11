@@ -1,5 +1,14 @@
 Qtile x.xx.x, released xxxx-xx-xx:
     * features
+      - consolidate development infrastructure on uv
+      - rename ThreadPoolText -> BackgroundPoll with a new `async def apoll()`
+        method for widgets to optionally run in the main event loop. There is
+        a migration for this people can run via `qtile migrate`, and old
+        widgets with a `def poll()` will continue use that as the preferred
+        method for polling, running in a separate thread as it always has.
+      - the GenPollUrl widget now uses the asyncio infrastrcutre of
+        BackgroundPoll above, and depends on aiohttp as a result. in-tree
+        widgets that use GenPollUrl also depend on aihottp now.
     * bugfixes
 
 Qtile 0.33.0, released 2025-07-24:
