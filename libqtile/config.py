@@ -371,9 +371,7 @@ class EzDrag(EzConfig, Drag):
 
     """
 
-    def __init__(
-        self, btndef: str, *commands: LazyCall, start: LazyCall | None = None
-    ) -> None:
+    def __init__(self, btndef: str, *commands: LazyCall, start: LazyCall | None = None) -> None:
         modkeys, button = self.parse(btndef)
         button = f"Button{button}"
         super().__init__(modkeys, button, *commands, start=start)
@@ -607,9 +605,7 @@ class Screen(CommandObject):
         return val
 
     def get_rect(self) -> ScreenRect:
-        return ScreenRect(
-            self.dx, self.dy, self.dwidth, self.dheight, self.serial, self.name
-        )
+        return ScreenRect(self.dx, self.dy, self.dwidth, self.dheight, self.serial, self.name)
 
     def set_group(
         self, new_group: _Group | None, save_prev: bool = True, warp: bool = True
@@ -656,9 +652,7 @@ class Screen(CommandObject):
 
         hook.fire("setgroup")
         hook.fire("focus_change")
-        hook.fire(
-            "layout_change", self.group.layouts[self.group.current_layout], self.group
-        )
+        hook.fire("layout_change", self.group.layouts[self.group.current_layout], self.group)
 
     def _toggle_group(self, group: _Group | None = None, warp: bool = True) -> None:
         """Switch to the selected group or to the previously active one"""
@@ -1079,9 +1073,7 @@ class Match(_Match):
             try:
                 self._rules["net_wm_pid"] = int(net_wm_pid)
             except ValueError:
-                error = (
-                    f'Invalid rule for net_wm_pid: "{str(net_wm_pid)}" only int allowed'
-                )
+                error = f'Invalid rule for net_wm_pid: "{str(net_wm_pid)}" only int allowed'
                 raise utils.QtileError(error)
         if func is not None:
             self._rules["func"] = func
@@ -1150,9 +1142,7 @@ class Match(_Match):
             return False
         return True
 
-    def map(
-        self, callback: Callable[[base.Window], Any], clients: list[base.Window]
-    ) -> None:
+    def map(self, callback: Callable[[base.Window], Any], clients: list[base.Window]) -> None:
         """Apply callback to each client that matches this Match"""
         for c in clients:
             if self.compare(c):

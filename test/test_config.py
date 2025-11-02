@@ -109,9 +109,7 @@ def test_ezclick_ezdrag():
     assert btn.modifiers == [config.EzClick.modifier_keys["A"]]
 
 
-def test_screen_serial_ordering_the_order(
-    manager_nospawn, minimal_conf_noscreen, monkeypatch
-):
+def test_screen_serial_ordering_the_order(manager_nospawn, minimal_conf_noscreen, monkeypatch):
     # no serial numbers in config is ordered in config order
     minimal_conf_noscreen.screens = [Screen(), Screen()]
 
@@ -134,9 +132,7 @@ def make_screen(name: str) -> Screen:
     return Screen(serial=name, top=Bar([TextBox(name)], 10))
 
 
-def test_screen_serial_ordering_one_serial(
-    manager_nospawn, minimal_conf_noscreen, monkeypatch
-):
+def test_screen_serial_ordering_one_serial(manager_nospawn, minimal_conf_noscreen, monkeypatch):
     # one serial number is allowed, serial re-use overwrites to avoid confusion
     minimal_conf_noscreen.screens = [Screen(), make_screen("one")]
 

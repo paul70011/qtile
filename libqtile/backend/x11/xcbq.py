@@ -379,9 +379,7 @@ class Colormap:
         Flexible color allocation.
         """
         try:
-            return self.conn.conn.core.AllocNamedColor(
-                self.cid, len(color), color
-            ).reply()
+            return self.conn.conn.core.AllocNamedColor(self.cid, len(color), color).reply()
         except xcffib.xproto.NameError:
 
             def x8to16(i):
@@ -444,9 +442,7 @@ class RandR:
             else:
                 logger.debug("no pyedid, not detecting monitor serial numbers")
 
-            rect = ScreenRect(
-                crtc_info.x, crtc_info.y, crtc_info.width, crtc_info.height, serial
-            )
+            rect = ScreenRect(crtc_info.x, crtc_info.y, crtc_info.width, crtc_info.height, serial)
 
             # prepend the primary output, append all others in screen
             # resources order
@@ -457,9 +453,7 @@ class RandR:
         return infos
 
     def enable_screen_change_notifications(self, conn):
-        self.ext.SelectInput(
-            conn.default_screen.root.wid, xcffib.randr.NotifyMask.ScreenChange
-        )
+        self.ext.SelectInput(conn.default_screen.root.wid, xcffib.randr.NotifyMask.ScreenChange)
 
 
 class XFixes:
@@ -476,9 +470,7 @@ class XFixes:
 
     def select_selection_input(self, window, selection="PRIMARY"):
         _selection = self.conn.atoms[selection]
-        self.conn.xfixes.ext.SelectSelectionInput(
-            window.wid, _selection, self.selection_mask
-        )
+        self.conn.xfixes.ext.SelectSelectionInput(window.wid, _selection, self.selection_mask)
 
 
 class Connection:
@@ -604,9 +596,7 @@ class Connection:
         return self.sym_to_codes.get(keysym, [0])
 
     def keycode_to_keysym(self, keycode, modifier):
-        if keycode >= len(self.code_to_syms) or modifier >= len(
-            self.code_to_syms[keycode]
-        ):
+        if keycode >= len(self.code_to_syms) or modifier >= len(self.code_to_syms[keycode]):
             return 0
         return self.code_to_syms[keycode][modifier]
 
@@ -659,8 +649,7 @@ class Connection:
 
     def extensions(self):
         return set(
-            i.name.to_string().lower()
-            for i in self.conn.core.ListExtensions().reply().names
+            i.name.to_string().lower() for i in self.conn.core.ListExtensions().reply().names
         )
 
     def fixup_focus(self):
@@ -763,9 +752,7 @@ class Painter:
         self.conn.core.ChangeWindowAttributes(
             self.default_screen.root.wid, CW.BackPixmap, [root_pixmap]
         )
-        self.conn.core.ClearArea(
-            0, self.default_screen.root.wid, 0, 0, self.width, self.height
-        )
+        self.conn.core.ClearArea(0, self.default_screen.root.wid, 0, 0, self.width, self.height)
         self.conn.flush()
 
         # now that we have drawn the new pixmap, free the old one
