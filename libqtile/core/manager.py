@@ -320,6 +320,7 @@ class Qtile(CommandObject):
         Can also be triggered by sending Qtile a SIGUSR1 signal.
         """
         logger.debug("Reloading the configuration file")
+        hook.fire("before_reload")
 
         try:
             self.config.load()
